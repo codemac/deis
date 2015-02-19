@@ -14,7 +14,7 @@ export ETCD_PORT=${ETCD_PORT:-4001}
 export ETCD="$HOST:$ETCD_PORT"
 export ETCD_PATH=${ETCD_PATH:-/deis/builder}
 export ETCD_TTL=${ETCD_TTL:-10}
-export STORAGE_DRIVER=${STORAGE_DRIVER:-btrfs}
+export STORAGE_DRIVER=${STORAGE_DRIVER:-devicemapper}
 
 # wait for etcd to be available
 until etcdctl --no-sync -C $ETCD ls >/dev/null 2>&1; do

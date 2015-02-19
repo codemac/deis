@@ -47,7 +47,7 @@ FORMAT_DOCKER_VOLUME = '''
   Type=oneshot
   RemainAfterExit=yes
   ExecStart=/usr/sbin/wipefs -f /dev/xvdf
-  ExecStart=/usr/sbin/mkfs.btrfs -f /dev/xvdf
+  ExecStart=/usr/sbin/mkfs.ext4 -f /dev/xvdf
   ExecStart=/bin/touch /etc/docker-volume-formatted
 '''
 MOUNT_DOCKER_VOLUME = '''
@@ -59,8 +59,14 @@ MOUNT_DOCKER_VOLUME = '''
   [Mount]
   What=/dev/xvdf
   Where=/var/lib/docker
-  Type=btrfs
 '''
+
+DEVICE_MAPPER_DOCKER= '''
+  [Service]
+  ExecStart=
+  ExecStart=/usr/bin/docker --daemon --storage-driver=devicemapper --host=fd:// $DOCKER_OPTS
+'''
+
 
 new_units = [
   dict({'name': 'format-ephemeral-volume.service', 'command': 'start', 'content': FORMAT_EPHEMERAL_VOLUME}),
@@ -68,6 +74,7 @@ new_units = [
   dict({'name': 'prepare-etcd-data-directory.service', 'command': 'start', 'content': PREPARE_ETCD_DATA_DIRECTORY}),
   dict({'name': 'format-docker-volume.service', 'command': 'start', 'content': FORMAT_DOCKER_VOLUME}),
   dict({'name': 'var-lib-docker.mount', 'command': 'start', 'content': MOUNT_DOCKER_VOLUME})
+  dict({'name': 'docker.service', 'drop-ins': dict({'name': '60-better-docker.conf', 'content': DEVICE_MAPPER_DOCKER})})
 ]
 
 data = yaml.load(file(os.path.join(CURR_DIR, '..', 'coreos', 'user-data'), 'r'))
