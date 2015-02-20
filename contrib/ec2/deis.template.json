@@ -254,7 +254,15 @@
             "Ebs" : { "VolumeSize" : "50" }
           },
           {
+            "DeviceName" : "/dev/xvdb",
+            "VirtualName" : "ephemeral0"
+          },
+          {
             "DeviceName" : "/dev/xvdf",
+            "Ebs" : { "VolumeSize" : "100" }
+          },
+          {
+            "DeviceName" : "/dev/xvdg",
             "Ebs" : { "VolumeSize" : "100" }
           }
         ]

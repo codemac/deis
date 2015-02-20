@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 import json
 import os
 import yaml
@@ -47,7 +47,7 @@ FORMAT_DOCKER_VOLUME = '''
   Type=oneshot
   RemainAfterExit=yes
   ExecStart=/usr/sbin/wipefs -f /dev/xvdf
-  ExecStart=/usr/sbin/mkfs.ext4 -f /dev/xvdf
+  ExecStart=/usr/sbin/mkfs.ext4 -F /dev/xvdf
   ExecStart=/bin/touch /etc/docker-volume-formatted
 '''
 MOUNT_DOCKER_VOLUME = '''
@@ -61,20 +61,77 @@ MOUNT_DOCKER_VOLUME = '''
   Where=/var/lib/docker
 '''
 
-DEVICE_MAPPER_DOCKER= '''
+DEVICE_MAPPER_DOCKER = '''
   [Service]
   ExecStart=
   ExecStart=/usr/bin/docker --daemon --storage-driver=devicemapper --host=fd:// $DOCKER_OPTS
 '''
 
+FORMAT_USER_DOCKER_VOLUME = '''
+  [Unit]
+  Description=Formats the added EBS volume for the User Docker
+  ConditionPathExists=!/etc/userdocker-volume-formatted
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=/usr/sbin/wipefs -f /dev/xvdg
+  ExecStart=/usr/sbin/mkfs.ext4 -F /dev/xvdg
+  ExecStart=/bin/touch /etc/userdocker-volume-formatted
+'''
+MOUNT_USER_DOCKER_VOLUME = '''
+  [Unit]
+  Description=Mount User Docker volume to /var/lib/userdocker
+  Requires=format-userdocker-volume.service
+  After=format-userdocker-volume.service
+  Before=userdocker.service
+  [Mount]
+  What=/dev/xvdg
+  Where=/var/lib/userdocker
+'''
+
+USER_DOCKER_SERVICE = '''
+[Unit]
+Description=User Docker Application Container Engine
+Documentation=http://docs.docker.io
+After=userdocker.socket early-docker.target
+Requires=userdocker.socket early-docker.target
+
+[Service]
+LimitNOFILE=1048576
+LimitNPROC=1048576
+ExecStartPre=/bin/mount --make-rprivate /
+# Run docker but don't have docker automatically restart
+# containers. This is a job for systemd and unit files.
+ExecStart=/usr/bin/docker --daemon --storage-driver=devicemapper --graph=/var/lib/userdocker --host=fd:// -H 0.0.0.0:5237 --pidfile=/var/run/userdocker.pid
+
+[Install]
+WantedBy=multi-user.target
+
+'''
+
+USER_DOCKER_SOCKET = '''
+[Unit]
+Description=User Docker Socket for the API
+
+[Socket]
+SocketMode=0660
+SocketUser=docker
+SocketGroup=docker
+ListenStream=/var/run/userdocker.sock
+
+[Install]
+WantedBy=sockets.target
+'''
 
 new_units = [
   dict({'name': 'format-ephemeral-volume.service', 'command': 'start', 'content': FORMAT_EPHEMERAL_VOLUME}),
   dict({'name': 'media-ephemeral.mount', 'command': 'start', 'content': MOUNT_EPHEMERAL_VOLUME}),
   dict({'name': 'prepare-etcd-data-directory.service', 'command': 'start', 'content': PREPARE_ETCD_DATA_DIRECTORY}),
   dict({'name': 'format-docker-volume.service', 'command': 'start', 'content': FORMAT_DOCKER_VOLUME}),
-  dict({'name': 'var-lib-docker.mount', 'command': 'start', 'content': MOUNT_DOCKER_VOLUME})
-  dict({'name': 'docker.service', 'drop-ins': dict({'name': '60-better-docker.conf', 'content': DEVICE_MAPPER_DOCKER})})
+  dict({'name': 'var-lib-docker.mount', 'command': 'start', 'content': MOUNT_DOCKER_VOLUME}),
+  dict({'name': 'format-userdocker-volume.service', 'command': 'start', 'content': FORMAT_USER_DOCKER_VOLUME}),
+  dict({'name': 'var-lib-userdocker.mount', 'command': 'start', 'content': MOUNT_USER_DOCKER_VOLUME})
+
 ]
 
 data = yaml.load(file(os.path.join(CURR_DIR, '..', 'coreos', 'user-data'), 'r'))
@@ -85,6 +142,14 @@ data['coreos']['units'] = new_units + data['coreos']['units']
 
 # configure etcd to use the ephemeral drive
 data['coreos']['etcd']['data-dir'] = '/media/ephemeral/etcd'
+
+new_files = [
+  dict({'path': '/etc/systemd/system/docker.service.d/60-device-mapper.conf', 'content': DEVICE_MAPPER_DOCKER}),
+  dict({'path': '/etc/systemd/system/userdocker.service', 'content': USER_DOCKER_SERVICE}),
+  dict({'path': '/etc/systemd/system/userdocker.socket', 'content': USER_DOCKER_SOCKET})
+]
+
+data['write_files'] = new_files + data['write_files']
 
 header = ["#cloud-config", "---"]
 dump = yaml.dump(data, default_flow_style=False)
